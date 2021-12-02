@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Zeeslag</title>
+
+        <style>
+            h1 {
+                font-family: roboto;
+                margin: 0px;
+                padding-top: 20px;
+                padding-left: 20px;
+                padding-bottom: 10px;
+            }
+
+            #designation {
+                font-family: roboto;
+                padding-left: 20px;
+                padding-bottom: 25px;
+            }
+
+            #mySea {
+                padding-left: 10px;
+            }
+
+            #turnBoatButton {
+                float: right;
+            }
+        </style>
+    </head>
+    
+    <body>
+        <h1>Zeeslag</h1>
+        <div id="designation">Plaats een boot van 2 vakjes.</div>
+        <button id="turnBoatButton">Draai boot</button>
+        <canvas id="mySea" width=600 height=600></canvas>
+        <canvas id="enemySea" width=600 height=600></canvas>
+
+        <script>
+            var myCanvas = document.getElementById("mySea");
+            var myCtx = myCanvas.getContext("2d");
+
+            var enemyCanvas = document.getElementById("enemySea");
+            var enemyCtx = enemyCanvas.getContext("2d");
+
+            var mySquares = [];
+            var enemySquares = [];
+            var gapSize = 3
+            var numRows = 12
+            var squareSize = getSquareSize()
+
+            var ships = [
+                {name: "Cruiser", size: 2},
+                {name: "Aircraft carrier", size: 5},
+                {name: "Destroyer", size: 4},
+                {name: "Minesweeper", size: 3},
+                {name: "Submarine", size: 3}
+            ]
+
+            var currentShipIndex = 0
+            var currentEnemyShipIndex = 0
+            var orientation = "horizontal"
+
+            // Deze functie berekent hoe groot de vierkantjes van het grid moeten zijn om in de canvas te passen.
+            function getSquareSize(){
+                var canvasWidth = myCanvas.width
+                var optimalSquareSize = (canvasWidth / numRows) - gapSize
+                return optimalSquareSize
+            }
+
+            /*
+            Deze functie maakt een object aan waarin coordinaten, de staat, het schip en een aantal methoden zitten.
+            De "draw" methode tekent de square op het canvas.
+            De "isClicked" methode kijkt of de coordinaten die als parameter zijn meegegeven binnen de square vallen.
+            De "getColor" methode kijkt welke kleur het vakje moet hebben.
+            */
+            function createGridSquare(x, y, seaColors, gridNumber){
+                var square = {
+                    x: x,
+                    state: "water",
+                    y: y,
+                    getColor: seaColors,
+                    id: gridNumber,
+                    draw: drawSquare,
+                    drawStar: drawStar,
+                    drawCross: drawCross,
+                    isClicked: coordinatesOverlap
+                }
+                return square
+            }
+
+            // Methode: die een vierkantje tekent op bepaalde coordinaten in een bepaalde canvas
+            function drawSquare(context, state){
+                if(state != undefined){
+                    this.state = state
+                }
+                context.beginPath();
+                context.fillStyle = this.getColor();
+                context.rect(this.x, this.y, squareSize, squareSize);
+                context.fill();
+            }
+
+            // Methode: die een ster tekent op bepaalde coordinaten in een bepaalde canvas
+            function drawStar(context){                      
+                context.beginPath()
+                context.fillStyle = "#ffff00"
+                context.moveTo(this.x + 24, this.y + 6)
+                context.lineTo(this.x + 28, this.y + 18)
+                context.lineTo(this.x + 41, this.y + 18)
+                context.lineTo(this.x + 32, this.y + 27)
+                context.lineTo(this.x + 35, this.y + 41)
+                context.lineTo(this.x + 24, this.y + 34)
+                context.lineTo(this.x + 13, this.y + 41)
+                context.lineTo(this.x + 16, this.y + 27)
+                context.lineTo(this.x + 6, this.y + 18)
+                context.lineTo(this.x + 20, this.y + 18)
+                context.lineTo(this.x + 24, this.y + 6)
+                context.closePath()
+                context.fill()
+            }
+
+            // Methode: die een kruis tekent op bepaalde coordinaten in een bepaalde canvas
+            function drawCross(context){
+                context.beginPath()
+                context.lineWidth = 3
+                context.strokeStyle = "#ffffff"
+                context.moveTo(this.x + 10, this.y + 10)
+                context.lineTo(this.x + 38, this.y + 38)
+                context.lineTo(this.x + 24, this.y + 24)
+                context.lineTo(this.x + 10, this.y + 38)
+                context.lineTo(this.x + 38, this.y + 10)
+                context.lineTo(this.x + 24, this.y + 24)
+                context.lineTo(this.x + 10, this.y + 10)
+                context.closePath()
+                context.stroke()
+            }
+
+            // Methode: als de coordinaten in de parameters overlappen met de coordinaten in het object is er overlap.
+            function coordinatesOverlap(x,y){
+                var overlap = false
+                if(x >= this.x && x < this.x + squareSize + gapSize && y >= this.y && y <= this.y + squareSize + gapSize){
+                    overlap = true
+                }
+                return overlap
+            }
+
+            // Methode: in mijn zee zijn de boten geel.
+            function mySeaColors(){
+                if(this.state == "water"){
+                    return "blue"
+                }else if (this.state == "miss"){
+                    return "red"
+                }else if (this.state == "hit"){
+                    return "green"
+                }else if (this.state == "ship"){
+                    return "yellow"
+                }
+            }
+
+            // Methode: in de zee van de tegenstander zijn de boten verstopt (dezelfde kleur als de zee).
+            function enemySeaColors(){
+                if(this.state == "water"){
+                    return "blue"
+                }else if (this.state == "miss"){
+                    return "red"
+                }else if (this.state == "hit"){
+                    return "green"
+                }else if (this.state == "ship"){
+                    return "blue"
+                }
+            }
+
+
+            /*
+            De "e" parameter verwijst naar het click event waardoor deze functie (indirect) getriggered wordt. Deze "e" heeft een clientX en clientY veld waar de coordinaten van de klik in staan.
+            Positie van de muis != positie van de elementen van de canvas. Daarvoor moeten we eerst de beginpunten van het canvas opvragen. Daar is de canvas.getBoundingClientRect() methode voor.
+            Als je deze functie niet snapt is dat niet erg.
+            */
+            function getMousePosRelativeToCanvas(e){
+                var rect = e.target.getBoundingClientRect();
+                return{
+                  x: e.clientX - rect.left,
+                  y: e.clientY - rect.top
+                };
+            }
+
+            // Veranderd de oriëntatie van de boot wanneer er op de knop geklikt wordt.
+            function changeOrientation(){
+                    if(orientation == "horizontal"){
+                        orientation = "vertical"
+                    }else if(orientation == "vertical"){
+                        orientation = "horizontal"
+                    }
+                }
+
+            document.getElementById("turnBoatButton").onclick = changeOrientation
+
+            // Functie controleert of een boot geplaatst mag worden op een vierkantje.
+            function isValidPosition(firstSquareIndex, currentShipSize, squares){
+                var isValid = true;
+                if(orientation == "horizontal"){
+                    // Gaat niet over rand heen, % is modulo operator die naar de "restwaarde" van een deling kijkt.
+                    if(numRows - (firstSquareIndex % numRows) < currentShipSize){
+                        isValid = false
+                    }
+                    // Gaat niet over ander schip heen.
+                    for(var i = firstSquareIndex; i < firstSquareIndex + currentShipSize; i++){
+                        if(squares[i] != undefined && squares[i].state == "ship"){
+                            isValid = false
+                        }
+                    }   
+                    document.getElementById("designation").innerHTML = "Hier kun je geen boot plaatsen, probeer het ergens anders."
+                }else if (orientation == "vertical"){
+                    // Gaat niet over rand heen.
+                    var lastSquare = firstSquareIndex + ((currentShipSize - 1) * numRows)
+                    if(lastSquare >= (numRows * numRows)){
+                        isValid = false
+                    }
+                    // Gaat niet over ander schip heen.
+                    for(var i = firstSquareIndex ; i < (firstSquareIndex + (currentShipSize * numRows)) ; i = i + 12){
+                        if(squares[i] != undefined && squares[i].state == "ship"){
+                            isValid = false
+                        }
+                    } 
+                    document.getElementById("designation").innerHTML = "Hier kun je geen boot plaatsen, probeer het ergens anders."  
+                }
+                return isValid
+            }
+
+            /*
+            Tekent een boot op de plek waarop geklikt is, maar voert wel eerst wat controles uit.
+            De currentship index wordt bij een succesvolle plaatsing opgehoogd, waardoor de volgende keer een nieuwe boot getekend wordt.
+            */
+            function placeBoat(firstSquareIndex){
+                var currentShipSize = ships[currentShipIndex].size
+                if(isValidPosition(firstSquareIndex, currentShipSize, mySquares)){
+                    if(orientation == "horizontal"){                        
+                        for(var i = firstSquareIndex ; i < firstSquareIndex + currentShipSize ; i++){
+                            mySquares[i].draw(myCtx, "ship")
+                            mySquares[i].boatName = ships[currentShipIndex].name  
+                        }
+                    }
+
+                    if(orientation == "vertical"){                       
+                        for(var i = firstSquareIndex ; i < (firstSquareIndex + (currentShipSize * numRows)) ; i += 12){
+                            mySquares[i].draw(myCtx, "ship")
+                            mySquares[i].boatName = ships[currentShipIndex].name
+                        }
+                    }
+                    currentShipIndex += 1
+
+                    for(var i = currentShipIndex; i < ships.length; i++){
+                        document.getElementById("designation").innerHTML = "Plaats een boot van " + ships[currentShipIndex].size + " vakjes."      
+                    }
+                }
+            }
+
+            // Tekent een boot op een plek die geselecteerd wordt door Math.random.
+            function placeEnemyBoat(firstSquareIndex){ 
+                var currentShipSize = ships[currentEnemyShipIndex].size
+                if(isValidPosition(firstSquareIndex, currentShipSize, enemySquares)){
+                    for(var i = firstSquareIndex ; i < firstSquareIndex + currentShipSize ; i++){
+                        enemySquares[i].draw(enemyCtx, "ship")
+                        enemySquares[i].boatName = ships[currentEnemyShipIndex].name
+                    }
+                    currentEnemyShipIndex += 1
+                }
+            }
+
+            // Tekent de canvas met een zee, waar vervolgens de boten in worden geplaatst.
+            function drawSea(seaColors, ctx, squares){
+                for (var y = 0, rowNumber = 0; rowNumber < numRows; y+=squareSize + gapSize , rowNumber++){
+                    for (var x = 0, columnNumber=0; columnNumber < numRows; x+= squareSize + gapSize, columnNumber++){
+                        var square = createGridSquare(x, y, seaColors, rowNumber*numRows + columnNumber)
+                        square.draw(ctx, "water")
+                        squares.push(square)
+                    }
+                }
+            }
+
+            // Bepaald of een boot is gezonken.
+            function boatHasSunk(squares, nameOfBoat){
+                for(i = 0 ; i < squares.length ; i++){
+                    if(squares[i].boatName != undefined && squares[i].boatName == nameOfBoat){
+                        if(squares[i].state == "ship"){
+                            return false
+                        }
+                    }
+                }
+                return true
+            }
+
+            /*
+            Functie kijkt of de coordinaten waar geklikt is overeen komen met een plek op het grid.
+            Als dat zo is, beslist de functie wat er moet gebeuren.
+            */
+            function playHumanTurn(mouseX,mouseY){
+                var isValid = true
+                for (var i = 0; i < enemySquares.length; i++){
+                    if (enemySquares[i].isClicked(mouseX, mouseY)){
+                        if(enemySquares[i].state == "water"){
+                            enemySquares[i].draw(enemyCtx, "miss")
+                            enemySquares[i].drawCross(enemyCtx)
+                        }else if(enemySquares[i].state == "ship"){
+                            enemySquares[i].draw(enemyCtx, "hit")
+                            enemySquares[i].drawStar(enemyCtx)
+                            if(boatHasSunk(enemySquares, enemySquares[i].boatName)){
+                                alert("De " + enemySquares[i].boatName + " van je vijand is gezonken")
+                            }
+                        }else if(enemySquares[i].state == "miss" || "hit"){
+                            isValid = false
+                        }
+                    }
+                }
+                return isValid
+            }
+
+            // De computer gooit een bom in het wilde weg ergens in jouw zee.
+            function playComputerTurn(){
+                var target = Math.floor(Math.random() * numRows * numRows);
+                while(mySquares[target].state == "miss" || mySquares[target].state == "hit"){
+                    target = Math.floor(Math.random() * numRows * numRows)
+                }
+                if(mySquares[target].state == "water"){
+                    mySquares[target].draw(myCtx, "miss")
+                    mySquares[target].drawCross(myCtx)
+                }else if (mySquares[target].state == "ship"){
+                    mySquares[target].draw(myCtx, "hit")
+                    mySquares[target].drawStar(myCtx)
+                    if(boatHasSunk(mySquares, mySquares[target].boatName)){
+                        alert("Je " + mySquares[target].boatName + " is gezonken")
+                    }
+                }
+            }
+
+            /*
+            De "clickEvent" parameter verwijst naar het "click event" waardoor deze functie getriggered wordt. Dit "event" is een object waar allerlei informatie over de click in verstopt zit.
+            De functie probeert de huidige boot te plaatsen.
+            Als er geen boot meer te plaatsen is, wordt de vijandige zee getekend, en worden de functies die in de onclick zitten vervangen door functies die nodig zijn voor het echte spel.
+            */
+            function gameSetupRound(clickEvent){
+                mouseX = parseInt(getMousePosRelativeToCanvas(clickEvent).x)
+                mouseY = parseInt(getMousePosRelativeToCanvas(clickEvent).y)
+
+                for (var i = 0; i < mySquares.length; i++){
+                    // Tekent een boot op de plek waar geklikt is.
+                    if (mySquares[i].isClicked(mouseX, mouseY)){
+                        placeBoat(i)
+                    // Als alle boten geplaatst zijn door de speler wordt de zee van de tegenstander getekent en de boten geplaatst.
+                    }else if (currentShipIndex == ships.length){
+                        drawSea(enemySeaColors, enemyCtx, enemySquares)
+                        for (var i = 0 ; i < enemySquares.length ; i++){
+                            if(currentEnemyShipIndex != ships.length){
+                                placeEnemyBoat(Math.floor(Math.random() * numRows * numRows))
+                            // Als alle boten van de tegenstander zijn geplaatst krijgt de speler een aanwijzing en verandert de onclick listener.
+                            }else{
+                                document.getElementById("designation").innerHTML = "Gooi een bom op de tegenstander."
+                                document.getElementById("enemySea").onclick = playRound;
+                                document.getElementById("mySea").onclick = "";
+                            }
+                        }
+                    }  
+                }
+            }
+
+            /*
+            Dit is het echte spel, de functie wordt aangeroepen door een click event.
+            de "clickEvent" parameter is het click event, daarin zit informatie over de coordinaten waar geklikt is.
+            */
+            function playRound(clickEvent){
+                mouseX = parseInt(getMousePosRelativeToCanvas(clickEvent).x)
+                mouseY = parseInt(getMousePosRelativeToCanvas(clickEvent).y)
+                if(playHumanTurn(mouseX,mouseY)){
+                    playComputerTurn()
+                    winner(mySquares, "tegenstander heeft")
+                    winner(enemySquares, "hebt")
+                }   
+            }
+
+            // De functie bepaald of een speler heeft gewonnen.
+            function winner(squares, whichPlayer){
+                var counter = 0
+                for(i = 0 ; i < squares.length ; i++){
+                    if(squares[i].state == "ship"){
+                        counter++
+                    }
+                }
+                if(counter == 0){
+                    alert("Je " + whichPlayer + " gewonnen!")
+                }
+            }
+
+            drawSea(mySeaColors, myCtx, mySquares)
+            document.getElementById("mySea").onclick = gameSetupRound;
+        </script>
+    </body>
+</html>
